@@ -4,9 +4,9 @@ Invite-only circles of dad friends trading skills, tools, and favors (including 
 
 | Part | Tech | Where |
 | --- | --- | --- |
-| Front end | React + Vite + Mantine, installable PWA with Web Push | `web/` → S3 + CloudFront |
-| API | ASP.NET Core 8 minimal APIs, EF Core | `api/PorchLight.Api` → App Runner |
-| Database | PostgreSQL 16 | RDS (local: Docker) |
+| Front end | React + Vite + Mantine, installable PWA with Web Push | `web/`, served by the API in production |
+| API | ASP.NET Core 8 minimal APIs, EF Core | `api/PorchLight.Api` |
+| Database | PostgreSQL 16 | Docker |
 | Auth | Google Identity Services ID token → API cookie session | |
 | Tests | xUnit integration tests against real Postgres | `api/PorchLight.Api.Tests` |
 
@@ -58,47 +58,37 @@ The access rules are in [Access.cs](api/PorchLight.Api/Services/Access.cs) and c
 
 ## Configuration
 
-All settings can be environment variables (`__` for nesting), which is how App Runner should get them.
+All settings can be environment variables (`__` for nesting). In production, [deploy/compose.yml](deploy/compose.yml) maps the `.env` values onto these.
 
 | Setting | Example | Notes |
 | --- | --- | --- |
-| `ConnectionStrings__Db` | `Host=...rds.amazonaws.com;Database=porchlight;Username=...;Password=...;SSL Mode=Require` | From Secrets Manager |
-| `App__PublicOrigin` | `https://porchlight.example.com` | Your CloudFront domain. Used for the same-origin check and links in calendar files |
+| `ConnectionStrings__Db` | `Host=...rds.amazonaws.com;Database=porchlight;Username=...;Password=...;SSL Mode=Require` | |
+| `App__PublicOrigin` | `https://porchlight.example.com` | The public HTTPS address. Used for the same-origin check and links in calendar files |
 | `Auth__GoogleClientId` | `1234-abc.apps.googleusercontent.com` | |
 | `Auth__BootstrapEmails__0` | `you@gmail.com` | Who can sign up without an invite (you, to create the first circle) |
 | `Push__VapidSubject` | `mailto:you@gmail.com` | |
-| `Push__VapidPublicKey` / `Push__VapidPrivateKey` | from `generate-vapid` | Private key from Secrets Manager |
+| `Push__VapidPublicKey` / `Push__VapidPrivateKey` | from `generate-vapid` | Never change these after people subscribe |
 | `Reminders__LeadMinutes` | `120` | |
+| `Reminders__Mode` | `background` / `scheduler` / `off` | `background` for an always-on server; `scheduler` for hosts that only give the app CPU during requests |
+| `Reminders__CronKey` | long random string | Required for `scheduler`: a scheduler calls `POST /api/internal/reminders` with header `X-Cron-Key` every 5 minutes |
 
-## Deploying to AWS (pilot setup, done by hand)
+## Deploying (self-hosted)
 
-Target cost: tens of dollars a month (db.t4g.micro RDS, smallest App Runner instance, S3 + CloudFront).
+Production runs on a home server VM behind Cloudflare Tunnel. Everything is in [deploy/](deploy/):
 
-1. **Billing alarm.** In Billing → Budgets, create a monthly cost budget (say $40) with an email alert.
-2. **Google OAuth client.** Google Cloud Console → APIs & Services:
-   - OAuth consent screen: External, **Testing** mode. Add each dad's Gmail as a **test user** (this also gates who can sign in).
-   - Credentials → Create OAuth client ID → Web application. Authorized JavaScript origins: your CloudFront domain and `http://localhost:5173`. No redirect URIs are needed.
-3. **Database.** RDS → PostgreSQL 16, db.t4g.micro, 20 GB gp3, encryption at rest on (default), not publicly accessible. Store the connection string in Secrets Manager.
-4. **API image.** Create an ECR repo `porch-light-api`, then build and push:
+- [deploy/Dockerfile](deploy/Dockerfile): one image with the API and the built web front end (served from `wwwroot`).
+- [deploy/compose.yml](deploy/compose.yml): the app, Postgres, and `cloudflared`. Nothing is published on a host port; the tunnel is the only way in.
+- [deploy/.env.example](deploy/.env.example): every setting, with notes. Copy it to `deploy/.env` (never committed) and fill it in.
 
-   ```bash
-   docker build --platform linux/amd64 -t porch-light-api -f api/Dockerfile api
-   ```
+```bash
+cd deploy && docker compose up -d --build
+```
 
-   Tag and push it to ECR following the repo's "View push commands".
-5. **App Runner.** Create a service from the ECR image, port 8080, 0.25 vCPU / 0.5 GB. Health check path `/api/health`. Add the environment variables from the table above, referencing Secrets Manager for the connection string and VAPID private key. Add a VPC connector so it can reach RDS, and allow the connector's security group into the RDS security group on 5432. Migrations run on startup.
-6. **Front end.** Create a private S3 bucket. Create a CloudFront distribution:
-   - Default behavior → the S3 bucket (Origin Access Control). Attach [infra/cloudfront-spa-rewrite.js](infra/cloudfront-spa-rewrite.js) as a viewer-request CloudFront Function so app routes serve `index.html`. Don't use custom error pages for this, since they would also swallow API errors.
-   - Behavior `/api/*` → origin = the App Runner domain (HTTPS only). Cache policy **CachingDisabled**, origin request policy **AllViewerExceptHostHeader**, allow all HTTP methods.
-   - Serving the API under the same domain keeps the session cookie first-party, which iPhone Safari requires.
-   - Optional: your own domain with an ACM certificate (us-east-1).
-7. **Ship the web build:**
+The hosting requirements (VM, network isolation, backups, monitoring, acceptance checklist) are in [docs/HOSTING.md](docs/HOSTING.md).
 
-   ```bash
-   scripts/deploy-web.sh <bucket> <distribution-id>
-   ```
+Google sign-in: in Google Cloud Console → APIs & Services, set the OAuth consent screen to External in **Testing** mode and add each dad's Gmail as a **test user** (this also gates who can sign in). Then create an OAuth client ID (Web application) with your public address and `http://localhost:5173` as authorized JavaScript origins. No redirect URIs are needed.
 
-8. Sign in with a bootstrap email, create a circle, and invite everyone.
+Then sign in with the bootstrap email, create a circle, and invite everyone.
 
 ## Pilot launch checklist (Phase 6)
 

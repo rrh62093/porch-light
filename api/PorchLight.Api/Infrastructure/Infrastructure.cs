@@ -1,5 +1,4 @@
 using System.Security.Claims;
-using Microsoft.AspNetCore.Diagnostics;
 
 namespace PorchLight.Api.Infrastructure;
 
@@ -18,20 +17,29 @@ public static class ErrorHandling
 {
     public static void UseApiErrors(this WebApplication app)
     {
-        app.UseExceptionHandler(errApp => errApp.Run(async ctx =>
+        // A plain middleware rather than UseExceptionHandler, which logs every exception as a failure.
+        // Expected errors (ApiException, bad input) become 4xx replies; only real crashes are logged.
+        app.Use(async (ctx, next) =>
         {
-            var ex = ctx.Features.Get<IExceptionHandlerFeature>()?.Error;
-            var (status, message) = ex switch
+            try
             {
-                ApiException api => (api.Status, api.Message),
-                BadHttpRequestException bad => (400, bad.Message),
-                _ => (500, "Something went wrong on our end."),
-            };
-            if (status == 500)
-                ctx.RequestServices.GetRequiredService<ILogger<Program>>().LogError(ex, "Unhandled error");
-            ctx.Response.StatusCode = status;
-            await ctx.Response.WriteAsJsonAsync(new { error = message });
-        }));
+                await next();
+            }
+            catch (Exception ex) when (!ctx.Response.HasStarted && !ctx.RequestAborted.IsCancellationRequested)
+            {
+                var (status, message) = ex switch
+                {
+                    ApiException api => (api.Status, api.Message),
+                    BadHttpRequestException bad => (bad.StatusCode, bad.Message),
+                    _ => (500, "Something went wrong on our end."),
+                };
+                if (status >= 500)
+                    ctx.RequestServices.GetRequiredService<ILogger<Program>>().LogError(ex, "Unhandled error");
+                ctx.Response.Clear();
+                ctx.Response.StatusCode = status;
+                await ctx.Response.WriteAsJsonAsync(new { error = message });
+            }
+        });
     }
 }
 

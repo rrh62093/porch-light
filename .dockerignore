@@ -1,0 +1,16 @@
+# Build context for deploy/Dockerfile (repo root).
+.git
+.claude
+**/bin
+**/obj
+**/node_modules
+web/dist
+web/*.tsbuildinfo
+api/PorchLight.Api.Tests
+api/PorchLight.Api/appsettings.Development.json
+**/appsettings.*.local.json
+**/.env
+**/.env.*
+docs
+scripts
+infra

@@ -17,6 +17,8 @@ public class ApiFactory : WebApplicationFactory<Program>
     public const string ConnectionString =
         "Host=localhost;Port=5433;Database=porchlight_test;Username=porchlight;Password=porchlight";
 
+    public const string CronKey = "test-cron-key";
+
     public ApiFactory()
     {
         // Fresh schema for every test run.
@@ -29,7 +31,8 @@ public class ApiFactory : WebApplicationFactory<Program>
         builder.UseEnvironment("Development");
         builder.UseSetting("ConnectionStrings:Db", ConnectionString);
         builder.UseSetting("Auth:EnableDevLogin", "true");
-        builder.UseSetting("Reminders:Enabled", "false");
+        builder.UseSetting("Reminders:Mode", "off");
+        builder.UseSetting("Reminders:CronKey", CronKey);
     }
 }
 
@@ -319,5 +322,34 @@ public class ApiTests(ApiFactory factory) : IClassFixture<ApiFactory>
         // Google sign-in without a configured client ID fails cleanly.
         var client = factory.CreateClient();
         await Status(HttpStatusCode.BadRequest, client.PostAsJsonAsync("/api/auth/google", new { credential = "x" }));
+    }
+
+    [Fact]
+    public async Task Scheduler_reminders_need_the_key_and_send_once()
+    {
+        var rob = await SignIn("Rob");
+        var mike = await SignIn("Mike");
+        var circleId = await Circle(rob.Client, mike);
+        var req = await Ok(rob.Client.PostAsJsonAsync("/api/requests", new
+        {
+            circleId, title = "Help carry a couch", neededFrom = DateTimeOffset.UtcNow.AddMinutes(30),
+            offers = new[] { new { description = "Pizza" } },
+        }));
+        await Ok(mike.Client.PostAsJsonAsync($"/api/requests/{req.GetProperty("id").GetGuid()}/respond", new { kind = "accept" }));
+
+        var scheduler = factory.CreateClient();
+        await Status(HttpStatusCode.NotFound, scheduler.PostAsync("/api/internal/reminders", null));
+        var wrong = new HttpRequestMessage(HttpMethod.Post, "/api/internal/reminders");
+        wrong.Headers.Add("X-Cron-Key", "nope");
+        await Status(HttpStatusCode.NotFound, scheduler.SendAsync(wrong));
+
+        async Task<int> Run()
+        {
+            var msg = new HttpRequestMessage(HttpMethod.Post, "/api/internal/reminders");
+            msg.Headers.Add("X-Cron-Key", ApiFactory.CronKey);
+            return (await Ok(scheduler.SendAsync(msg))).GetProperty("sent").GetInt32();
+        }
+        Assert.True(await Run() >= 1);
+        Assert.Equal(0, await Run());
     }
 }

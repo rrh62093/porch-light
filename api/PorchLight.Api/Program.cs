@@ -1,5 +1,4 @@
 using System.Text.Json.Serialization;
-using System.Threading.Channels;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -46,10 +45,15 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
 builder.Services.AddAuthorization();
 
 builder.Services.AddScoped<Access>();
+builder.Services.AddHttpClient("webpush");
+builder.Services.AddSingleton<PushClient>();
 builder.Services.AddScoped<Notifier>();
-builder.Services.AddSingleton(Channel.CreateUnbounded<(Guid, PushMessage)>());
-builder.Services.AddHostedService<PushSender>();
-if (config.GetValue("Reminders:Enabled", true)) builder.Services.AddHostedService<ReminderWorker>();
+builder.Services.AddScoped<Reminders>();
+// "background": in-process loop (local dev, always-on servers).
+// "scheduler": an external scheduler calls POST /api/internal/reminders (App Runner and other request-only CPU hosts).
+// "off": no reminders.
+if (string.Equals(config["Reminders:Mode"] ?? "background", "background", StringComparison.OrdinalIgnoreCase))
+    builder.Services.AddHostedService<ReminderWorker>();
 
 builder.Services.Configure<ForwardedHeadersOptions>(o =>
 {
@@ -90,6 +94,18 @@ app.Use(async (ctx, next) =>
 });
 
 app.MapGet("/api/health", () => Results.Ok(new { ok = true }));
+
+// Called every few minutes by a scheduler. Protected by a shared key in the X-Cron-Key header.
+app.MapPost("/api/internal/reminders", async (HttpContext ctx, Reminders reminders) =>
+{
+    var expected = config["Reminders:CronKey"];
+    var given = ctx.Request.Headers["X-Cron-Key"].ToString();
+    if (string.IsNullOrEmpty(expected) ||
+        !System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
+            System.Text.Encoding.UTF8.GetBytes(given), System.Text.Encoding.UTF8.GetBytes(expected)))
+        return Results.NotFound();
+    return Results.Ok(new { sent = await reminders.SendDue(ctx.RequestAborted) });
+});
 app.MapAuth();
 app.MapCircles();
 app.MapProfiles();
@@ -97,10 +113,22 @@ app.MapRequests();
 app.MapDeals();
 app.MapPush();
 
-// When the built front end is copied to wwwroot (single-container option), serve it too.
+// The production image copies the built front end into wwwroot, so the API serves it too.
+// Hashed /assets files never change, so caches can keep them forever. Everything else (index.html,
+// the service worker, the manifest) must be rechecked, or phones and Cloudflare hold on to old versions.
+var staticFiles = new StaticFileOptions
+{
+    OnPrepareResponse = ctx =>
+    {
+        ctx.Context.Response.Headers.CacheControl =
+            ctx.Context.Request.Path.StartsWithSegments("/assets")
+                ? "public, max-age=31536000, immutable"
+                : "no-cache";
+    },
+};
 app.UseDefaultFiles();
-app.UseStaticFiles();
-app.MapFallbackToFile("index.html");
+app.UseStaticFiles(staticFiles);
+app.MapFallbackToFile("index.html", staticFiles);
 
 app.Run();
 

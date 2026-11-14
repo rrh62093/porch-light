@@ -1,0 +1,63 @@
+# Production stack: app + Postgres + Cloudflare Tunnel.
+# Run from this folder with a filled-in .env next to it (copy .env.example):
+#   docker compose up -d --build
+# Nothing here is published on a host port. The only way in is the tunnel.
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: porchlight
+      POSTGRES_DB: porchlight
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U porchlight -d porchlight"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    logging: *logging
+
+  app:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: porch-light:${APP_TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__Db: Host=db;Port=5432;Database=porchlight;Username=porchlight;Password=${POSTGRES_PASSWORD}
+      App__PublicOrigin: ${PUBLIC_ORIGIN:?set PUBLIC_ORIGIN in .env}
+      Auth__GoogleClientId: ${GOOGLE_CLIENT_ID:-}
+      Auth__BootstrapEmails__0: ${BOOTSTRAP_EMAIL:-}
+      Push__VapidSubject: ${VAPID_SUBJECT:-}
+      Push__VapidPublicKey: ${VAPID_PUBLIC_KEY:-}
+      Push__VapidPrivateKey: ${VAPID_PRIVATE_KEY:-}
+      Reminders__Mode: background
+      Reminders__LeadMinutes: ${REMINDER_LEAD_MINUTES:-120}
+    logging: *logging
+
+  cloudflared:
+    # Pinned on purpose; bump deliberately.
+    image: cloudflare/cloudflared:2024.11.1
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:?set TUNNEL_TOKEN in .env}
+    depends_on:
+      - app
+    logging: *logging
+
+volumes:
+  db-data:
