@@ -18,12 +18,29 @@ declare global {
   }
 }
 
+// Load Google's sign-in script once per page load, however many times the login page mounts.
+let googleScript: Promise<void> | null = null;
+let googleInitializedFor: string | null = null;
+function loadGoogle(): Promise<void> {
+  if (window.google) return Promise.resolve();
+  googleScript ??= new Promise<void>((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://accounts.google.com/gsi/client';
+    s.async = true;
+    s.onload = () => resolve();
+    s.onerror = () => { googleScript = null; s.remove(); reject(new Error('Google sign-in failed to load')); };
+    document.head.appendChild(s);
+  });
+  return googleScript;
+}
+
 export function LoginPage() {
   const config = useApi<AuthConfig>(['authConfig'], '/auth/config');
   const qc = useQueryClient();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const googleRef = useRef<HTMLDivElement>(null);
+  // A state-backed ref, so the effect re-runs whenever the button's container mounts.
+  const [googleEl, setGoogleEl] = useState<HTMLDivElement | null>(null);
 
   const finish = async (call: Promise<unknown>) => {
     setBusy(true);
@@ -38,26 +55,28 @@ export function LoginPage() {
     }
   };
 
+  // Google calls back into whichever render of this page is current.
+  const finishRef = useRef(finish);
+  finishRef.current = finish;
+
   const clientId = config.data?.googleClientId;
   useEffect(() => {
-    if (!clientId || !googleRef.current) return;
-    const render = () => {
-      window.google!.accounts.id.initialize({
-        client_id: clientId,
-        callback: (r) => finish(api('/auth/google', { body: { credential: r.credential } })),
-      });
-      window.google!.accounts.id.renderButton(googleRef.current!, {
-        theme: 'outline', size: 'large', shape: 'pill', text: 'continue_with', width: 280,
-      });
-    };
-    if (window.google) return render();
-    const s = document.createElement('script');
-    s.src = 'https://accounts.google.com/gsi/client';
-    s.async = true;
-    s.onload = render;
-    document.head.appendChild(s);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clientId]);
+    if (!clientId || !googleEl) return;
+    let cancelled = false;
+    loadGoogle().then(() => {
+      if (cancelled) return;
+      const id = window.google!.accounts.id;
+      if (googleInitializedFor !== clientId) {
+        id.initialize({
+          client_id: clientId,
+          callback: (r) => finishRef.current(api('/auth/google', { body: { credential: r.credential } })),
+        });
+        googleInitializedFor = clientId;
+      }
+      id.renderButton(googleEl, { theme: 'outline', size: 'large', shape: 'pill', text: 'continue_with', width: 280 });
+    }).catch(() => !cancelled && setError("Couldn't load Google sign-in. Check your connection and reload."));
+    return () => { cancelled = true; };
+  }, [clientId, googleEl]);
 
   return (
     <Center mih="100dvh" p="md">
@@ -70,7 +89,7 @@ export function LoginPage() {
 
         {error && <Alert color="red" w="100%">{error}</Alert>}
 
-        {clientId ? <div ref={googleRef} style={{ minHeight: 44 }} /> : null}
+        {clientId ? <div ref={setGoogleEl} style={{ minHeight: 44 }} /> : null}
         {config.data && !clientId && !config.data.devLogin && (
           <Alert color="gray" w="100%">Google sign-in isn't configured yet. See the README.</Alert>
         )}
