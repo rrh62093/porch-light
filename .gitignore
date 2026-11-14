@@ -1,0 +1,10 @@
+bin/
+obj/
+node_modules/
+web/dist/
+.DS_Store
+*.user
+.vs/
+.idea/
+appsettings.*.local.json
+.env

@@ -1,0 +1,98 @@
+:root[data-mantine-color-scheme='light'] {
+  --mantine-color-body: #faf8f5;
+  --pl-surface: #ffffff;
+  --pl-border: #e6e1da;
+  --pl-muted: #7a7268;
+}
+:root[data-mantine-color-scheme='dark'] {
+  --mantine-color-body: #1c1a17;
+  --pl-surface: #25221f;
+  --pl-border: #3b3631;
+  --pl-muted: #948c82;
+}
+
+html, body { overscroll-behavior-y: none; }
+body { -webkit-tap-highlight-color: transparent; }
+
+.pl-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  padding: calc(env(safe-area-inset-top) + 10px) 16px 10px;
+  background: color-mix(in srgb, var(--mantine-color-body) 92%, transparent);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--pl-border);
+}
+
+.pl-main {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 16px 16px calc(96px + env(safe-area-inset-bottom));
+}
+
+.pl-tabbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  align-items: end;
+  padding: 6px 4px calc(6px + env(safe-area-inset-bottom));
+  background: var(--pl-surface);
+  border-top: 1px solid var(--pl-border);
+}
+
+.pl-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-height: 52px;
+  justify-content: center;
+  color: var(--pl-muted);
+  text-decoration: none;
+  font-size: 11px;
+  font-weight: 500;
+  position: relative;
+}
+.pl-tab[aria-current='page'] { color: var(--mantine-color-text); font-weight: 650; }
+.pl-tab .pl-count {
+  position: absolute;
+  top: 2px;
+  left: calc(50% + 6px);
+}
+
+.pl-post {
+  justify-self: center;
+  width: 56px;
+  height: 56px;
+  margin-bottom: 4px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--mantine-color-amber-5);
+  color: #24211e;
+  box-shadow: 0 4px 14px rgba(242, 163, 26, 0.35);
+  text-decoration: none;
+}
+.pl-post:active { transform: scale(0.96); }
+
+.pl-card-link {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+}
+.pl-card-link:active { opacity: 0.85; }
+
+.pl-section-title {
+  font-size: 13px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--pl-muted);
+  margin: 20px 0 8px;
+}
+
+.pl-unread { border-left: 3px solid var(--mantine-color-amber-5) !important; }

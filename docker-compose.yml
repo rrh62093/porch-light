@@ -1,0 +1,14 @@
+# Local development database. `docker compose up -d`
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: porchlight
+      POSTGRES_PASSWORD: porchlight
+      POSTGRES_DB: porchlight
+    ports:
+      - "5433:5432"
+    volumes:
+      - porchlight-db:/var/lib/postgresql/data
+volumes:
+  porchlight-db:
