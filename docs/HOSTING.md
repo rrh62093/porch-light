@@ -87,8 +87,10 @@ Start it from the `deploy/` folder with `docker compose up -d --build`. The Comp
 
 ### 4.5 Cloudflare
 
-- A domain on Cloudflare (the owner will provide it or buy one). The app gets a hostname such as `porchlight.<domain>`.
-- A named Cloudflare Tunnel (token-based, running as the `cloudflared` container), routing that hostname to `http://app:8080`.
+- The domain is **`porchlight.dad`**, registered through Cloudflare by the owner. The app lives at the bare domain, **`https://porchlight.dad`** (no `www` or other subdomain); that exact address is already authorized in the Google sign-in client.
+- `.dad` is on the browsers' HTTPS-only list, so plain `http://` never works. Cloudflare's edge certificate covers this automatically.
+- Optional: redirect `www.porchlight.dad` to `https://porchlight.dad` with a Cloudflare redirect rule.
+- A named Cloudflare Tunnel (token-based, running as the `cloudflared` container), routing the public hostname `porchlight.dad` (the apex: leave the subdomain empty) to `http://app:8080`.
 - Settings:
   - SSL/TLS: "Always Use HTTPS" on.
   - **Caching:** add a Cache Rule to bypass the cache for `/api/*`, `/sw.js`, `/index.html`, `/`, and `/manifest.webmanifest`. If the service worker or `index.html` get cached at the edge, phones won't pick up new versions. Caching `/assets/*` is fine, since those filenames are content-hashed.
@@ -107,8 +109,8 @@ Copy `deploy/.env.example` to `deploy/.env` and fill it in. Keep it owned by the
 | `COMPOSE_PROJECT_NAME` | `porchlight` |
 | `APP_TAG` | image tag; set per deploy (e.g. the git commit) so rollback is a tag change |
 | `POSTGRES_PASSWORD` | generated (`openssl rand -base64 32 \| tr -d '/+='`) |
-| `PUBLIC_ORIGIN` | `https://porchlight.<domain>` |
-| `GOOGLE_CLIENT_ID` | from the Google Cloud console (the owner creates this) |
+| `PUBLIC_ORIGIN` | `https://porchlight.dad` |
+| `GOOGLE_CLIENT_ID` | already filled in `.env.example` (created by the owner; public, not a secret) |
 | `BOOTSTRAP_EMAIL` | the owner's email (lets them sign up before any invites exist) |
 | `VAPID_SUBJECT` | `mailto:<owner email>` |
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | generated once with `docker run --rm porch-light generate-vapid` after building the image; **must never change** after users subscribe |
@@ -129,7 +131,7 @@ Keep a copy of the `.env` contents (especially the database password and VAPID k
 
 ### 4.8 Monitoring
 
-- An external uptime check (UptimeRobot, Better Stack, healthchecks.io, or similar; free tier is fine) on `https://porchlight.<domain>/api/health` every 5 minutes, emailing the owner when it's down.
+- An external uptime check (UptimeRobot, Better Stack, healthchecks.io, or similar; free tier is fine) on `https://porchlight.dad/api/health` every 5 minutes, emailing the owner when it's down.
 - Disk usage alert at 80% if easy; otherwise include disk checks in the runbook.
 
 ### 4.9 Deploying new versions
@@ -149,8 +151,8 @@ Take a manual `pg_dump` before any deploy that includes a database migration. Th
 
 The environment is ready when all of these are true:
 
-- [ ] `https://porchlight.<domain>` loads the app with a valid certificate, from a phone on cellular data (off the home Wi‑Fi).
-- [ ] `https://porchlight.<domain>/api/health` returns `{"ok":true}`.
+- [ ] `https://porchlight.dad` loads the app with a valid certificate, from a phone on cellular data (off the home Wi‑Fi).
+- [ ] `https://porchlight.dad/api/health` returns `{"ok":true}`.
 - [ ] A port scan of the home public IP shows nothing new open.
 - [ ] From inside the VM, the other home LAN devices (e.g. the router admin page, a laptop) are **not** reachable.
 - [ ] Postgres and port 8080 aren't published on any host port (check with `docker compose ps` and `ss -tlnp`).
@@ -182,7 +184,6 @@ A short `RUNBOOK.md` (it can live in the repo under `deploy/`, **with no secrets
 
 ## 8. Decisions the owner still needs to make
 
-- **Domain:** which one, and whether it's already on Cloudflare.
 - **Backup destination:** S3 in the existing AWS account (default) or Backblaze B2.
 - **Network isolation:** VLAN (if the switch and router support it) or firewall-only.
 - **Remote admin:** whether SSH from outside the house is wanted (Tailscale or Cloudflare Access), or LAN only.

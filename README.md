@@ -63,7 +63,7 @@ All settings can be environment variables (`__` for nesting). In production, [de
 | Setting | Example | Notes |
 | --- | --- | --- |
 | `ConnectionStrings__Db` | `Host=...rds.amazonaws.com;Database=porchlight;Username=...;Password=...;SSL Mode=Require` | |
-| `App__PublicOrigin` | `https://porchlight.example.com` | The public HTTPS address. Used for the same-origin check and links in calendar files |
+| `App__PublicOrigin` | `https://porchlight.dad` | The public HTTPS address. Used for the same-origin check and links in calendar files |
 | `Auth__GoogleClientId` | `1234-abc.apps.googleusercontent.com` | |
 | `Auth__BootstrapEmails__0` | `you@gmail.com` | Who can sign up without an invite (you, to create the first circle) |
 | `Push__VapidSubject` | `mailto:you@gmail.com` | |
